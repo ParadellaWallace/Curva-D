@@ -1,0 +1,204 @@
+// Backend Java program code remains the same as previously provided
+
+// React Native code updated to include graphs on the Home page
+
+import React, { useState, useEffect } from 'react';
+import { Provider, useDispatch, useSelector } from 'react-redux';
+import { createStore, applyMiddleware } from 'redux';
+import thunk from 'redux-thunk';
+import { View, Text, TextInput, Button, Alert, StyleSheet, FlatList, ScrollView } from 'react-native';
+import { LineChart } from 'react-native-chart-kit';
+import axios from 'axios';
+import * as Notifications from 'expo-notifications';
+import * as Permissions from 'expo-permissions';
+import rootReducer from './src/reducers';
+import { fetchProducts } from './src/actions/productActions';
+
+const store = createStore(rootReducer, applyMiddleware(thunk));
+
+const LoginScreen = ({ navigation }) => {
+  const [cnpj, setCnpj] = useState('');
+
+  const handleLogin = () => {
+    if (cnpj.trim() === '') {
+      Alert.alert('Input Required', 'Please enter a valid CNPJ.');
+      return;
+    }
+    navigation.navigate('Home');
+  };
+
+  return (
+    <View style={styles.loginContainer}>
+      <Text style={styles.appName}>Analisando Curva D</Text>
+      <Text style={styles.label}>CNPJ da Loja:</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Digite o CNPJ"
+        value={cnpj}
+        onChangeText={setCnpj}
+        keyboardType="numeric"
+      />
+      <Text style={styles.label}>Login: Farmácia Fênix</Text>
+      <Button title="Entrar" onPress={handleLogin} />
+    </View>
+  );
+};
+
+const HomeScreen = () => {
+  const dispatch = useDispatch();
+  const products = useSelector((state) => state.product.products);
+  const [curvaDData, setCurvaDData] = useState([]);
+
+  useEffect(() => {
+    requestNotificationPermissions();
+    dispatch(fetchProducts());
+  }, [dispatch]);
+
+  const requestNotificationPermissions = async () => {
+    const { status } = await Permissions.askAsync(Permissions.NOTIFICATIONS);
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Notification permissions are required to alert you about Curva D products.');
+    }
+  };
+
+  const checkForCurvaD = (productData) => {
+    const curvaDProducts = productData.filter((product) => product.diasSemVenda > 90);
+
+    if (curvaDProducts.length > 0) {
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Curva D Alert',
+          body: Total Curva D products: ${curvaDProducts.length}. Realize uma ação e tire esses produtos da Curva D.,
+        },
+        trigger: null,
+      });
+      // Update data for graph
+      const date = new Date().toISOString().split('T')[0];
+      setCurvaDData((prevData) => [...prevData, { date, count: curvaDProducts.length }]);
+    }
+  };
+
+  useEffect(() => {
+    if (products.length > 0) {
+      checkForCurvaD(products);
+    }
+  }, [products]);
+
+  const renderProduct = ({ item }) => (
+    <View style={styles.productContainer}>
+      <Text style={styles.productText}>Produto: {item.nomeProduto}</Text>
+      <Text style={styles.productText}>Dias sem venda: {item.diasSemVenda}</Text>
+    </View>
+  );
+
+  return (
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>Farmácia Fênix - Product Analysis</Text>
+      <LineChart
+        data={{
+          labels: curvaDData.map((dataPoint) => dataPoint.date),
+          datasets: [
+            {
+              data: curvaDData.map((dataPoint) => dataPoint.count),
+            },
+          ],
+        }}
+        width={350} // from react-native
+        height={220}
+        yAxisLabel=""
+        chartConfig={{
+          backgroundColor: '#e26a00',
+          backgroundGradientFrom: '#fb8c00',
+          backgroundGradientTo: '#ffa726',
+          decimalPlaces: 0,
+          color: (opacity = 1) => rgba(255, 255, 255, ${opacity}),
+          labelColor: (opacity = 1) => rgba(255, 255, 255, ${opacity}),
+          style: {
+            borderRadius: 16,
+          },
+          propsForDots: {
+            r: '6',
+            strokeWidth: '2',
+            stroke: '#ffa726',
+          },
+        }}
+        style={{
+          marginVertical: 8,
+          borderRadius: 16,
+        }}
+      />
+      <FlatList
+        data={products}
+        renderItem={renderProduct}
+        keyExtractor={(item) => item.idProduto.toString()}
+      />
+      <Button title="Refresh Data" onPress={() => dispatch(fetchProducts())} />
+    </ScrollView>
+  );
+};
+
+const App = () => (
+  <Provider store={store}>
+    <LoginScreen />
+    <HomeScreen />
+  </Provider>
+);
+
+const styles = StyleSheet.create({
+  loginContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#f0f0f0',
+  },
+  appName: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 40,
+    textAlign: 'center',
+  },
+  label: {
+    fontSize: 16,
+    marginBottom: 10,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 5,
+    padding: 10,
+    marginBottom: 20,
+    width: '80%',
+  },
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: '#f8f8f8',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  productContainer: {
+    padding: 15,
+    backgroundColor: '#fff',
+    marginBottom: 10,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+  },
+  productText: {
+    fontSize: 16,
+  },
+  alertText: {
+    fontSize: 16,
+    color: 'red',
+    fontWeight: 'bold',
+  },
+});
+
+export default App;
